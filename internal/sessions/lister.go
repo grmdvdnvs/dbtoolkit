@@ -2,25 +2,57 @@ package sessions
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
+
+	_ "github.com/lib/pq"
 
 	"grmdvdnvs/dbtoolkit/internal/logging"
 )
 
 type SessionInfo struct {
-	ID        string
-	User      string
-	StartedAt time.Time
-	State     string
+	PID         int
+	User        sql.NullString
+	Database    sql.NullString
+	Application sql.NullString
+	ClientAddr  sql.NullString
+	State       sql.NullString
+	QueryStart  sql.NullTime
+	Query       sql.NullString
 }
 
 func (s SessionInfo) String() string {
-	return fmt.Sprintf("id=%s user=%s started=%s state=%s", s.ID, s.User, s.StartedAt.Format(time.RFC3339), s.State)
+	return fmt.Sprintf(
+		"PID: %d, User: %s, Database: %s, Application: %s, ClientAddr: %s, State: %s, QueryStart: %s, Query: %s",
+		s.PID,
+		ns(s.User),
+		ns(s.Database),
+		ns(s.Application),
+		ns(s.ClientAddr),
+		ns(s.State),
+		nt(s.QueryStart),
+		ns(s.Query),
+	)
+}
+
+func ns(v sql.NullString) string {
+	if v.Valid {
+		return v.String
+	}
+	return "-"
+}
+
+func nt(v sql.NullTime) string {
+	if v.Valid {
+		return v.Time.Format(time.RFC3339)
+	}
+	return "-"
 }
 
 type ListConfig struct {
-	DBType    string
+	DSN       string
+	Driver    string
 	OlderThan time.Duration
 	User      string
 }
@@ -31,22 +63,61 @@ func NewLister() *Lister { return &Lister{} }
 
 func (l *Lister) List(ctx context.Context, cfg ListConfig) ([]SessionInfo, error) {
 	logger := logging.Get()
-	logger.Infof("listing sessions for db=%s older-than=%v user=%s", cfg.DBType, cfg.OlderThan, cfg.User)
+	logger.Infof("listing sessions for driver=%s dsn=%s", cfg.Driver, cfg.DSN)
+	db, err := sql.Open(cfg.Driver, cfg.DSN)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
 
-	now := time.Now()
-	sessions := []SessionInfo{
-		{ID: "1", User: "app_user", StartedAt: now.Add(-3 * time.Hour), State: "ACTIVE"},
-		{ID: "2", User: "other", StartedAt: now.Add(-30 * time.Minute), State: "IDLE"},
+	if err := db.Ping(); err != nil {
+		return nil, err
 	}
-	out := []SessionInfo{}
-	for _, s := range sessions {
-		if cfg.User != "" && s.User != cfg.User {
-			continue
-		}
-		if cfg.OlderThan > 0 && now.Sub(s.StartedAt) < cfg.OlderThan {
-			continue
-		}
-		out = append(out, s)
+
+	return listActiveSessions(db)
+}
+
+func listActiveSessions(db *sql.DB) ([]SessionInfo, error) {
+	query := `
+		SELECT
+			pid,
+			usename,
+			datname,
+			application_name,
+			client_addr::text,
+			state,
+			query_start,
+			query
+		FROM pg_stat_activity
+		WHERE pid <> pg_backend_pid()
+		AND backend_type = 'client backend'
+		ORDER BY state, query_start;
+	`
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, err
 	}
-	return out, nil
+	defer rows.Close()
+
+	var sessions []SessionInfo
+
+	for rows.Next() {
+		var s SessionInfo
+		if err := rows.Scan(
+			&s.PID,
+			&s.User,
+			&s.Database,
+			&s.Application,
+			&s.ClientAddr,
+			&s.State,
+			&s.QueryStart,
+			&s.Query,
+		); err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, s)
+	}
+
+	return sessions, rows.Err()
 }

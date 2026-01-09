@@ -12,7 +12,8 @@ import (
 )
 
 var (
-	dbType     string
+	dsn        string
+	driver     string
 	olderThan  time.Duration
 	userFilter string
 	kill       bool
@@ -32,7 +33,8 @@ func init() {
 			logger := logging.Get()
 			ctx := context.Background()
 			cfg := sessions.ListConfig{
-				DBType:    dbType,
+				DSN:       dsn,
+				Driver:    driver,
 				OlderThan: olderThan,
 				User:      userFilter,
 			}
@@ -56,7 +58,7 @@ func init() {
 			logger := logging.Get()
 			ctx := context.Background()
 			cfg := sessions.KillConfig{
-				DBType:    dbType,
+				Driver:    driver,
 				OlderThan: olderThan,
 				User:      userFilter,
 				Preview:   preview,
@@ -67,7 +69,8 @@ func init() {
 		},
 	}
 
-	sessionsCmd.PersistentFlags().StringVar(&dbType, "db", "oracle", "Tipo de BD: oracle|postgres")
+	sessionsCmd.PersistentFlags().StringVar(&dsn, "dsn", "", "Data Source Name de la BD (e.g. user/password@host:port/sid)")
+	sessionsCmd.PersistentFlags().StringVar(&driver, "driver", "", "Tipo de BD: oracle|postgres")
 	sessionsCmd.PersistentFlags().DurationVar(&olderThan, "older-than", 0, "Listar/kill sesiones más antiguas que (e.g. 2h)")
 	sessionsCmd.PersistentFlags().StringVar(&userFilter, "user", "", "Filtrar por usuario")
 	listCmd.Flags().BoolVar(&preview, "preview", true, "Modo seguro: sólo ver qué se cerraría")

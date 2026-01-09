@@ -1,4 +1,3 @@
-// File: cmd/root.go
 package cmd
 
 import (
@@ -6,6 +5,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
 	"grmdvdnvs/dbtoolkit/internal/logging"
 )
 
@@ -23,7 +23,6 @@ func Execute() {
 }
 
 func init() {
-	// flags comunes si los necesitas
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Verbose output")
 	rootCmd.AddCommand(migrateCmd)
 	rootCmd.AddCommand(sessionsCmd)
